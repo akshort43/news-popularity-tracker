@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Blackjack Trainer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <div class="tag">AI BLACKJACK TRAINER</div>
+        <h1>Practice Optimal Play</h1>
+      </div>
+      <div class="modes">
+        <button id="btn-mode-play" class="active">Play</button>
+        <button id="btn-mode-drill">Drill</button>
+      </div>
+    </header>
+
+    <div class="table">
+      <div class="section dealer">
+        <div class="label">Dealer</div>
+        <div class="cards-row" id="dealer-cards"></div>
+        <div class="dealer-total" id="dealer-total"></div>
+      </div>
+
+      <div class="section player">
+        <div class="label">You</div>
+        <div id="player-area"></div>
+      </div>
+
+      <div id="feedback"></div>
+      <div id="hint"></div>
+      <div id="count"></div>
+
+      <div class="actions">
+        <button id="btn-hit">Hit <span class="key">H</span></button>
+        <button id="btn-stand">Stand <span class="key">S</span></button>
+        <button id="btn-double">Double <span class="key">D</span></button>
+        <button id="btn-split">Split <span class="key">P</span></button>
+      </div>
+      <div class="actions" id="play-controls">
+        <button id="btn-deal" class="primary">Deal <span class="key">⏎</span></button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Accuracy</div><div class="v" id="stat-acc">—</div></div>
+      <div class="stat"><div class="k">Decisions</div><div class="v" id="stat-decisions">0/0</div></div>
+      <div class="stat"><div class="k">Streak</div><div class="v" id="stat-streak">0 (best 0)</div></div>
+      <div class="stat"><div class="k">Hands</div><div class="v" id="stat-hands">0</div></div>
+      <div class="stat"><div class="k">Net units</div><div class="v" id="stat-net">+0</div></div>
+      <div class="stat"><div class="k">Bankroll</div><div class="v" id="stat-bankroll">1000</div></div>
+      <div class="stat" style="grid-column: 1 / -1;">
+        <div class="k">By action</div>
+        <div id="stat-by-action"></div>
+      </div>
+    </div>
+
+    <div class="settings">
+      <label><input type="checkbox" id="chk-hint"> Show optimal hint</label>
+      <label><input type="checkbox" id="chk-das" checked> Double after split (DAS)</label>
+      <label><input type="checkbox" id="chk-count"> Show Hi-Lo running count</label>
+      <button id="btn-reset">Reset stats</button>
+    </div>
+
+    <footer>
+      Keys: <kbd>H</kbd>it · <kbd>S</kbd>tand · <kbd>D</kbd>ouble · S<kbd>P</kbd>lit · <kbd>⏎</kbd> deal &middot;
+      Rules: 6 decks, dealer stands soft 17, blackjack pays 3:2, no surrender.
+    </footer>
+  </div>
+
+  <script src="strategy.js"></script>
+  <script src="game.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
