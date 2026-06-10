@@ -1,7 +1,7 @@
 // UI controller for the blackjack trainer.
 
 const STATE = {
-  mode: 'play',                 // 'play' | 'drill'
+  mode: 'play',                 // 'play' | 'drill' | 'chart'
   round: null,
   drill: null,                  // { playerCards, dealerRank, optimal }
   showHint: false,
@@ -13,6 +13,7 @@ const STATE = {
   stats: loadStats(),
   weights: loadWeights(),       // per-situation miss counts for adaptive drill
   awaitingNext: false,          // true after a drill action, waiting for next
+  anim: { dealerN: 0, dealerHidden: false, handsN: [] },
 };
 
 function loadStats() {
@@ -29,14 +30,14 @@ function loadWeights() {
 }
 function saveWeights() { localStorage.setItem('bj-weights', JSON.stringify(STATE.weights)); }
 
-// ---------- Rendering ----------
+// ---------- Card rendering ----------
 
 function suitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
 
 function cardEl(card, faceDown = false) {
   const div = document.createElement('div');
   div.className = 'card' + (faceDown ? ' face-down' : '');
-  if (faceDown) { div.textContent = ''; return div; }
+  if (faceDown) return div;
   div.classList.add(suitColor(card.suit));
   div.innerHTML =
     `<div class="corner top">${card.rank}<br>${card.suit}</div>` +
@@ -45,41 +46,120 @@ function cardEl(card, faceDown = false) {
   return div;
 }
 
-function renderCards(container, cards, hideIndex = -1) {
+// Render a hand, animating only cards that are new since the previous render.
+// `justRevealed` flips the former hole card instead of dealing it in.
+function renderHandCards(container, cards, hideIndex, prevN, justRevealed) {
   container.innerHTML = '';
-  cards.forEach((c, i) => container.appendChild(cardEl(c, i === hideIndex)));
+  cards.forEach((c, i) => {
+    const el = cardEl(c, i === hideIndex);
+    if (i >= prevN) {
+      el.classList.add('deal-in');
+      el.style.animationDelay = `${(i - prevN) * 140}ms`;
+    } else if (justRevealed && i === 1) {
+      el.classList.add('flip-in');
+    }
+    container.appendChild(el);
+  });
 }
 
 function fmtHand(cards) {
   const { total, soft } = handValue(cards);
-  if (total > 21) return `${total} (bust)`;
+  if (total > 21) return `${total} — bust`;
   if (cards.length === 2 && total === 21) return 'Blackjack!';
-  return soft ? `${total - 10}/${total}` : `${total}`;
+  return soft ? `${total - 10} / ${total}` : `${total}`;
 }
 
 function setText(id, txt) { document.getElementById(id).textContent = txt; }
 
+// ---------- Coach panel ----------
+
+const RING_C = 2 * Math.PI * 52;
+
 function renderStats() {
   const s = STATE.stats;
   const acc = s.decisions ? Math.round((s.correct / s.decisions) * 100) : 0;
-  setText('stat-acc', `${acc}%`);
+  setText('stat-acc', s.decisions ? `${acc}%` : '—');
   setText('stat-decisions', `${s.correct}/${s.decisions}`);
   setText('stat-hands', s.hands);
-  setText('stat-net', (s.net >= 0 ? '+' : '') + s.net.toFixed(1));
-  setText('stat-streak', `${s.streak} (best ${s.bestStreak})`);
-  setText('stat-bankroll', STATE.bankroll.toFixed(0));
+
+  const ring = document.getElementById('ring-fg');
+  ring.style.strokeDashoffset = s.decisions ? RING_C * (1 - acc / 100) : RING_C;
+  ring.style.stroke = !s.decisions ? 'var(--gold)'
+    : acc >= 90 ? 'var(--good)' : acc >= 70 ? 'var(--gold)' : 'var(--bad)';
+
+  const netEl = document.getElementById('stat-net');
+  netEl.textContent = (s.net >= 0 ? '+' : '−') + Math.abs(s.net).toFixed(1);
+  netEl.className = 'v ' + (s.net > 0 ? 'pos' : s.net < 0 ? 'neg' : '');
+
+  const streakEl = document.getElementById('stat-streak');
+  streakEl.innerHTML = `${s.streak}${s.streak >= 10 ? ' 🔥' : ''} <small>best ${s.bestStreak}</small>`;
+
+  setText('stat-bankroll', STATE.bankroll.toLocaleString('en-US', { maximumFractionDigits: 0 }));
 
   const byA = document.getElementById('stat-by-action');
   byA.innerHTML = '';
   for (const a of ['H','S','D','P']) {
     const { c, t } = s.byAction[a];
-    const pct = t ? Math.round(c/t*100) : 0;
-    const span = document.createElement('span');
-    span.className = 'pill';
-    span.textContent = `${actionLabel(a)} ${c}/${t} (${pct}%)`;
-    byA.appendChild(span);
+    const pct = t ? Math.round(c / t * 100) : 0;
+    const bar = document.createElement('div');
+    bar.className = `abar a-${a}`;
+    bar.innerHTML =
+      `<span class="nm">${actionLabel(a)}</span>` +
+      `<div class="track"><div class="fill" style="width:${t ? pct : 0}%"></div></div>` +
+      `<span class="ct">${c}/${t}</span>`;
+    byA.appendChild(bar);
+  }
+
+  renderWeakSpots();
+}
+
+function describeKey(key) {
+  const [lhs, dealer] = key.split('|');
+  const [kind, val] = lhs.split(':');
+  let hand, cards, canSplit = false;
+  if (kind === 'P') {
+    const r = val.split(',')[0];
+    hand = `Pair of ${r}s`;
+    cards = [{ rank: r }, { rank: r }];
+    canSplit = true;
+  } else if (kind === 'S') {
+    const t = parseInt(val, 10);
+    hand = `Soft ${t}`;
+    cards = [{ rank: 'A' }, { rank: String(t - 11) }];
+  } else {
+    const t = parseInt(val, 10);
+    hand = `Hard ${t}`;
+    const a = t <= 11 ? 2 : t - 10;
+    const b = t <= 11 ? t - 2 : 10;
+    cards = [{ rank: String(a) }, { rank: b === 10 ? '10' : String(b) }];
+  }
+  const { action } = getOptimalAction(cards, dealer, {
+    canDouble: true, canSplit, dasAllowed: STATE.dasAllowed,
+  });
+  return { text: `${hand} vs ${dealer}`, answer: actionLabel(action) };
+}
+
+function renderWeakSpots() {
+  const el = document.getElementById('weak-spots');
+  const spots = Object.entries(STATE.weights)
+    .filter(([, w]) => w >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+  el.innerHTML = '';
+  if (!spots.length) {
+    el.innerHTML = '<span class="muted">No misses yet — keep playing.</span>';
+    return;
+  }
+  for (const [key] of spots) {
+    const { text, answer } = describeKey(key);
+    const row = document.createElement('div');
+    row.className = 'weak-spot';
+    row.innerHTML = `<span>${text}</span><span class="ans">${answer}</span>`;
+    el.appendChild(row);
   }
 }
+
+// ---------- Shared UI ----------
 
 function setActionButtons({ hit, stand, dbl, split }) {
   document.getElementById('btn-hit').disabled = !hit;
@@ -88,16 +168,21 @@ function setActionButtons({ hit, stand, dbl, split }) {
   document.getElementById('btn-split').disabled = !split;
 }
 
+function setChipsEnabled(on) {
+  document.querySelectorAll('.chip').forEach(c => { c.disabled = !on; });
+}
+
 function showFeedback(correct, optimalAction, playerCards, dealerRank, chosen) {
   const fb = document.getElementById('feedback');
   fb.classList.remove('correct', 'wrong');
+  const why = explainAction(playerCards, dealerRank, optimalAction);
   if (correct) {
     fb.classList.add('correct');
-    fb.textContent = `✓ Correct — ${actionLabel(optimalAction)}.`;
+    fb.innerHTML = `✓ ${actionLabel(optimalAction)} — correct.<span class="why">${why}</span>`;
   } else {
     fb.classList.add('wrong');
-    const why = explainAction(playerCards, dealerRank, optimalAction);
-    fb.textContent = `✗ You chose ${actionLabel(chosen)}. Optimal: ${actionLabel(optimalAction)}. ${why}`;
+    fb.innerHTML = `✗ You chose ${actionLabel(chosen)} — optimal is <strong>${actionLabel(optimalAction)}</strong>.` +
+                   `<span class="why">${why}</span>`;
   }
 }
 
@@ -120,6 +205,18 @@ function showHint(round) {
     dasAllowed: round.dasAllowed,
   });
   hintEl.textContent = `Hint: ${actionLabel(action)}`;
+}
+
+function showCount(round) {
+  const el = document.getElementById('count');
+  if (!STATE.countingOn || !round || STATE.mode !== 'play') {
+    el.textContent = '';
+    return;
+  }
+  const decksLeft = Math.max(round.shoe.length / 52, 0.5);
+  const trueCount = round.runningCount / decksLeft;
+  el.textContent = `Running ${round.runningCount >= 0 ? '+' : ''}${round.runningCount} · ` +
+                   `True ${trueCount >= 0 ? '+' : ''}${trueCount.toFixed(1)}`;
 }
 
 function recordDecision(action, correct, key) {
@@ -148,10 +245,13 @@ function recordDecision(action, correct, key) {
 
 function startRound() {
   clearFeedback();
+  STATE.anim = { dealerN: 0, dealerHidden: false, handsN: [] };
   STATE.round = new Round({ decks: STATE.decks, dasAllowed: STATE.dasAllowed, bet: STATE.bet,
                             shoe: STATE.round?.shoe?.length > 20 ? STATE.round.shoe : undefined,
                             runningCount: STATE.round?.shoe?.length > 20 ? STATE.round.runningCount : 0 });
   STATE.round.deal();
+  document.getElementById('btn-deal').disabled = true;
+  setChipsEnabled(false);
   renderRound();
   if (STATE.round.phase === 'settle') finishRound();
 }
@@ -160,26 +260,33 @@ function renderRound() {
   const r = STATE.round;
   if (!r) return;
 
-  const dealerCards = document.getElementById('dealer-cards');
   const inPlay = r.phase === 'player';
-  renderCards(dealerCards, r.dealer, inPlay ? 1 : -1);
+  const hideIdx = inPlay ? 1 : -1;
+  const dealerCards = document.getElementById('dealer-cards');
+  const justRevealed = STATE.anim.dealerHidden && hideIdx === -1;
+  renderHandCards(dealerCards, r.dealer, hideIdx, STATE.anim.dealerN, justRevealed);
+  STATE.anim.dealerN = r.dealer.length;
+  STATE.anim.dealerHidden = hideIdx === 1;
+
   document.getElementById('dealer-total').textContent = inPlay
-    ? `${cardValue(r.dealer[0].rank === 'A' ? 'A' : r.dealer[0].rank)}` // showing only upcard value
+    ? `Showing ${cardValue(r.dealer[0].rank)}`
     : fmtHand(r.dealer);
 
   const playerArea = document.getElementById('player-area');
   playerArea.innerHTML = '';
   r.hands.forEach((h, i) => {
     const wrap = document.createElement('div');
-    wrap.className = 'player-hand' + (i === r.active && r.phase === 'player' ? ' active' : '');
+    wrap.className = 'player-hand' + (i === r.active && inPlay ? ' active' : '');
     const lbl = document.createElement('div');
     lbl.className = 'hand-label';
-    lbl.textContent = `Hand ${i+1}${h.doubled ? ' (doubled)' : ''}${h.fromSplit ? ' (split)' : ''} — bet ${h.bet}`;
+    const tags = [h.doubled && 'doubled', h.fromSplit && 'split'].filter(Boolean).join(', ');
+    lbl.textContent = `${r.hands.length > 1 ? `Hand ${i+1} · ` : ''}${tags ? tags + ' · ' : ''}bet ${h.bet}`;
     wrap.appendChild(lbl);
     const cardsRow = document.createElement('div');
     cardsRow.className = 'cards-row';
-    h.cards.forEach(c => cardsRow.appendChild(cardEl(c)));
     wrap.appendChild(cardsRow);
+    renderHandCards(cardsRow, h.cards, -1, STATE.anim.handsN[i] ?? 0, false);
+    STATE.anim.handsN[i] = h.cards.length;
     const tot = document.createElement('div');
     tot.className = 'hand-total';
     tot.textContent = fmtHand(h.cards);
@@ -187,19 +294,13 @@ function renderRound() {
     playerArea.appendChild(wrap);
   });
 
-  if (r.phase === 'player') {
+  if (inPlay) {
     setActionButtons({ hit: true, stand: true, dbl: r.canDouble(), split: r.canSplit() });
-    showHint(r);
   } else {
     setActionButtons({ hit: false, stand: false, dbl: false, split: false });
-    document.getElementById('hint').textContent = '';
   }
-
-  if (STATE.countingOn) {
-    document.getElementById('count').textContent = `Running count: ${r.runningCount}`;
-  } else {
-    document.getElementById('count').textContent = '';
-  }
+  showHint(r);
+  showCount(r);
 }
 
 function playerAction(action) {
@@ -234,7 +335,7 @@ function playerAction(action) {
       r.playDealer();
       renderRound();
       finishRound();
-    }, 350);
+    }, 500);
   }
 }
 
@@ -246,10 +347,6 @@ function finishRound() {
   STATE.stats.net += net;
   saveStats();
 
-  // Render dealer fully and result strip
-  renderCards(document.getElementById('dealer-cards'), r.dealer, -1);
-  document.getElementById('dealer-total').textContent = fmtHand(r.dealer);
-
   const playerArea = document.getElementById('player-area');
   Array.from(playerArea.children).forEach((el, i) => {
     const res = results[i];
@@ -257,14 +354,16 @@ function finishRound() {
     tag.className = 'result-tag ' + (res === 'W' || res === 'BJ' ? 'win' : res === 'L' ? 'lose' : 'push');
     tag.textContent = res === 'BJ' ? 'BLACKJACK +' + (r.hands[i].bet * 1.5).toFixed(1)
                     : res === 'W' ? 'WIN +' + r.hands[i].bet
-                    : res === 'L' ? 'LOSE -' + r.hands[i].bet
+                    : res === 'L' ? 'LOSE −' + r.hands[i].bet
                     : 'PUSH';
     el.appendChild(tag);
   });
 
   setActionButtons({ hit: false, stand: false, dbl: false, split: false });
-  document.getElementById('btn-deal').disabled = false;
-  document.getElementById('btn-deal').textContent = 'Next hand';
+  const deal = document.getElementById('btn-deal');
+  deal.disabled = false;
+  deal.innerHTML = 'Next hand <span class="key">⏎</span>';
+  setChipsEnabled(true);
   renderStats();
 }
 
@@ -273,6 +372,7 @@ function finishRound() {
 function nextDrill() {
   clearFeedback();
   STATE.awaitingNext = false;
+  STATE.anim = { dealerN: 0, dealerHidden: false, handsN: [] };
   const sit = randomDrillSituation(STATE.weights);
   const { action: optimal } = getOptimalAction(sit.playerCards, sit.dealerRank, {
     canDouble: true, canSplit: true, dasAllowed: STATE.dasAllowed,
@@ -285,7 +385,7 @@ function renderDrill() {
   const d = STATE.drill;
   if (!d) return;
   const dealerCards = document.getElementById('dealer-cards');
-  renderCards(dealerCards, [{ rank: d.dealerRank, suit: '♠' }]);
+  renderHandCards(dealerCards, [{ rank: d.dealerRank, suit: '♠' }], -1, 0, false);
   document.getElementById('dealer-total').textContent = `Upcard: ${d.dealerRank}`;
 
   const playerArea = document.getElementById('player-area');
@@ -294,8 +394,8 @@ function renderDrill() {
   wrap.className = 'player-hand active';
   const row = document.createElement('div');
   row.className = 'cards-row';
-  d.playerCards.forEach(c => row.appendChild(cardEl(c)));
   wrap.appendChild(row);
+  renderHandCards(row, d.playerCards, -1, 0, false);
   const tot = document.createElement('div');
   tot.className = 'hand-total';
   tot.textContent = fmtHand(d.playerCards);
@@ -305,11 +405,8 @@ function renderDrill() {
   const canSplit = isPair(d.playerCards);
   setActionButtons({ hit: true, stand: true, dbl: true, split: canSplit });
 
-  if (STATE.showHint) {
-    document.getElementById('hint').textContent = `Hint: ${actionLabel(d.optimal)}`;
-  } else {
-    document.getElementById('hint').textContent = '';
-  }
+  document.getElementById('hint').textContent =
+    STATE.showHint ? `Hint: ${actionLabel(d.optimal)}` : '';
 }
 
 function drillAction(action) {
@@ -322,7 +419,7 @@ function drillAction(action) {
   showFeedback(correct, d.optimal, d.playerCards, d.dealerRank, action);
   STATE.awaitingNext = true;
   // Auto-advance after a short pause
-  setTimeout(() => { if (STATE.mode === 'drill') nextDrill(); }, correct ? 700 : 1800);
+  setTimeout(() => { if (STATE.mode === 'drill') nextDrill(); }, correct ? 800 : 2200);
 }
 
 // ---------- Mode/UI wiring ----------
@@ -330,21 +427,29 @@ function drillAction(action) {
 function setMode(mode) {
   STATE.mode = mode;
   clearFeedback();
-  document.getElementById('btn-mode-play').classList.toggle('active', mode === 'play');
-  document.getElementById('btn-mode-drill').classList.toggle('active', mode === 'drill');
+  for (const m of ['play','drill','chart']) {
+    document.getElementById(`btn-mode-${m}`).classList.toggle('active', mode === m);
+  }
+  document.getElementById('view-game').hidden = mode === 'chart';
+  document.getElementById('view-chart').hidden = mode !== 'chart';
+  if (mode === 'chart') return;
+
   document.getElementById('play-controls').style.display = mode === 'play' ? '' : 'none';
-  document.getElementById('count').style.display = mode === 'play' ? '' : 'none';
 
   if (mode === 'play') {
-    document.getElementById('btn-deal').disabled = false;
-    document.getElementById('btn-deal').textContent = 'Deal';
+    STATE.round = null;
+    const deal = document.getElementById('btn-deal');
+    deal.disabled = false;
+    deal.innerHTML = 'Deal <span class="key">⏎</span>';
+    setChipsEnabled(true);
     setActionButtons({ hit: false, stand: false, dbl: false, split: false });
-    document.getElementById('player-area').innerHTML = '';
+    document.getElementById('player-area').innerHTML =
+      '<div class="empty-felt">Press <strong>Deal</strong> to start a hand</div>';
     document.getElementById('dealer-cards').innerHTML = '';
     document.getElementById('dealer-total').textContent = '';
+    document.getElementById('hint').textContent = '';
+    document.getElementById('count').textContent = '';
   } else {
-    document.getElementById('btn-deal').disabled = true;
-    document.getElementById('btn-deal').textContent = '—';
     nextDrill();
   }
 }
@@ -375,18 +480,26 @@ function wireUp() {
 
   document.getElementById('btn-mode-play').addEventListener('click', () => setMode('play'));
   document.getElementById('btn-mode-drill').addEventListener('click', () => setMode('drill'));
+  document.getElementById('btn-mode-chart').addEventListener('click', () => setMode('chart'));
+
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      STATE.bet = parseInt(chip.dataset.bet, 10);
+      document.querySelectorAll('.chip').forEach(c => c.classList.toggle('selected', c === chip));
+    });
+  });
 
   document.getElementById('chk-hint').addEventListener('change', e => {
     STATE.showHint = e.target.checked;
     if (STATE.mode === 'play') showHint(STATE.round);
-    else renderDrill();
+    else if (STATE.mode === 'drill') renderDrill();
   });
   document.getElementById('chk-das').addEventListener('change', e => {
     STATE.dasAllowed = e.target.checked;
   });
   document.getElementById('chk-count').addEventListener('change', e => {
     STATE.countingOn = e.target.checked;
-    if (STATE.round) renderRound();
+    showCount(STATE.round);
   });
 
   document.getElementById('btn-reset').addEventListener('click', () => {
@@ -402,6 +515,7 @@ function wireUp() {
     else if (k === 'd') document.getElementById('btn-double').click();
     else if (k === 'p') document.getElementById('btn-split').click();
     else if (k === 'enter' || k === ' ') {
+      if (STATE.mode !== 'play') return;
       const deal = document.getElementById('btn-deal');
       if (!deal.disabled) deal.click();
       e.preventDefault();
@@ -411,6 +525,7 @@ function wireUp() {
 
 window.addEventListener('DOMContentLoaded', () => {
   wireUp();
+  renderStrategyCharts(document.getElementById('charts'));
   renderStats();
   setMode('play');
 });

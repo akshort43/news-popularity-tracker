@@ -3,77 +3,141 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>AI Blackjack Trainer</title>
+  <title>AI Blackjack Trainer — Practice Optimal Play</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <div class="bg-vignette" aria-hidden="true"></div>
+
   <div class="app">
     <header>
-      <div>
-        <div class="tag">AI BLACKJACK TRAINER</div>
-        <h1>Practice Optimal Play</h1>
+      <div class="brand">
+        <div class="logo">♠</div>
+        <div>
+          <h1>Blackjack <em>Trainer</em></h1>
+          <div class="tag">AI-coached practice for perfect basic strategy</div>
+        </div>
       </div>
-      <div class="modes">
+      <nav class="modes" aria-label="Mode">
         <button id="btn-mode-play" class="active">Play</button>
         <button id="btn-mode-drill">Drill</button>
-      </div>
+        <button id="btn-mode-chart">Chart</button>
+      </nav>
     </header>
 
-    <div class="table">
-      <div class="section dealer">
-        <div class="label">Dealer</div>
-        <div class="cards-row" id="dealer-cards"></div>
-        <div class="dealer-total" id="dealer-total"></div>
-      </div>
+    <main>
+      <section id="view-game" class="game-layout">
+        <div class="table-wrap">
+          <div class="table">
+            <div class="section dealer">
+              <div class="label">Dealer</div>
+              <div class="cards-row" id="dealer-cards"></div>
+              <div class="hand-total dealer-total" id="dealer-total"></div>
+            </div>
 
-      <div class="section player">
-        <div class="label">You</div>
-        <div id="player-area"></div>
-      </div>
+            <div class="table-inscription">BLACKJACK PAYS 3 TO 2 &nbsp;·&nbsp; DEALER STANDS ON ALL 17s</div>
 
-      <div id="feedback"></div>
-      <div id="hint"></div>
-      <div id="count"></div>
+            <div id="feedback" class="feedback" aria-live="polite"></div>
 
-      <div class="actions">
-        <button id="btn-hit">Hit <span class="key">H</span></button>
-        <button id="btn-stand">Stand <span class="key">S</span></button>
-        <button id="btn-double">Double <span class="key">D</span></button>
-        <button id="btn-split">Split <span class="key">P</span></button>
-      </div>
-      <div class="actions" id="play-controls">
-        <button id="btn-deal" class="primary">Deal <span class="key">⏎</span></button>
-      </div>
-    </div>
+            <div class="section player">
+              <div class="label">You</div>
+              <div id="player-area"><div class="empty-felt" id="empty-felt">Press <strong>Deal</strong> to start a hand</div></div>
+            </div>
 
-    <div class="stats">
-      <div class="stat"><div class="k">Accuracy</div><div class="v" id="stat-acc">—</div></div>
-      <div class="stat"><div class="k">Decisions</div><div class="v" id="stat-decisions">0/0</div></div>
-      <div class="stat"><div class="k">Streak</div><div class="v" id="stat-streak">0 (best 0)</div></div>
-      <div class="stat"><div class="k">Hands</div><div class="v" id="stat-hands">0</div></div>
-      <div class="stat"><div class="k">Net units</div><div class="v" id="stat-net">+0</div></div>
-      <div class="stat"><div class="k">Bankroll</div><div class="v" id="stat-bankroll">1000</div></div>
-      <div class="stat" style="grid-column: 1 / -1;">
-        <div class="k">By action</div>
-        <div id="stat-by-action"></div>
-      </div>
-    </div>
+            <div class="hud">
+              <div id="hint" class="hint"></div>
+              <div id="count" class="count"></div>
+            </div>
 
-    <div class="settings">
-      <label><input type="checkbox" id="chk-hint"> Show optimal hint</label>
-      <label><input type="checkbox" id="chk-das" checked> Double after split (DAS)</label>
-      <label><input type="checkbox" id="chk-count"> Show Hi-Lo running count</label>
-      <button id="btn-reset">Reset stats</button>
-    </div>
+            <div class="actions">
+              <button id="btn-hit" class="act act-hit">Hit <span class="key">H</span></button>
+              <button id="btn-stand" class="act act-stand">Stand <span class="key">S</span></button>
+              <button id="btn-double" class="act act-double">Double <span class="key">D</span></button>
+              <button id="btn-split" class="act act-split">Split <span class="key">P</span></button>
+            </div>
+
+            <div class="deal-row" id="play-controls">
+              <div class="chips" id="chips" aria-label="Bet size">
+                <button class="chip chip-5" data-bet="5">5</button>
+                <button class="chip chip-10 selected" data-bet="10">10</button>
+                <button class="chip chip-25" data-bet="25">25</button>
+                <button class="chip chip-100" data-bet="100">100</button>
+              </div>
+              <button id="btn-deal" class="primary">Deal <span class="key">⏎</span></button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="panel coach">
+          <div class="panel-title">Coach</div>
+
+          <div class="acc-ring-wrap">
+            <div class="acc-ring">
+              <svg viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                <circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="acc-center">
+                <div class="v" id="stat-acc">—</div>
+                <div class="k">accuracy</div>
+              </div>
+            </div>
+            <div class="ring-side">
+              <div class="stat"><div class="k">Decisions</div><div class="v" id="stat-decisions">0/0</div></div>
+              <div class="stat"><div class="k">Streak</div><div class="v" id="stat-streak">0 <small>best 0</small></div></div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat"><div class="k">Hands</div><div class="v" id="stat-hands">0</div></div>
+            <div class="stat"><div class="k">Net</div><div class="v" id="stat-net">+0</div></div>
+            <div class="stat"><div class="k">Bankroll</div><div class="v" id="stat-bankroll">1,000</div></div>
+          </div>
+
+          <div class="panel-sub">Accuracy by action</div>
+          <div id="stat-by-action" class="action-bars"></div>
+
+          <div class="panel-sub">Spots to review</div>
+          <div id="weak-spots" class="weak-spots"><span class="muted">No misses yet — keep playing.</span></div>
+
+          <div class="settings">
+            <label><input type="checkbox" id="chk-hint"> Show optimal hint</label>
+            <label><input type="checkbox" id="chk-das" checked> Double after split</label>
+            <label><input type="checkbox" id="chk-count"> Hi-Lo running count</label>
+            <button id="btn-reset">Reset progress</button>
+          </div>
+        </aside>
+      </section>
+
+      <section id="view-chart" class="chart-view" hidden>
+        <div class="chart-intro">
+          <h2>Basic Strategy Chart</h2>
+          <p>6 decks · dealer stands on soft 17 · double after split allowed. Rows are your hand, columns are the dealer's upcard.</p>
+          <div class="legend">
+            <span class="lg lg-hit">H&nbsp;Hit</span>
+            <span class="lg lg-stand">S&nbsp;Stand</span>
+            <span class="lg lg-double">D&nbsp;Double<small>else hit</small></span>
+            <span class="lg lg-double-s">Ds&nbsp;Double<small>else stand</small></span>
+            <span class="lg lg-split">P&nbsp;Split</span>
+            <span class="lg lg-split-h">Ph&nbsp;Split<small>if DAS, else hit</small></span>
+          </div>
+        </div>
+        <div class="charts" id="charts"></div>
+      </section>
+    </main>
 
     <footer>
-      Keys: <kbd>H</kbd>it · <kbd>S</kbd>tand · <kbd>D</kbd>ouble · S<kbd>P</kbd>lit · <kbd>⏎</kbd> deal &middot;
-      Rules: 6 decks, dealer stands soft 17, blackjack pays 3:2, no surrender.
+      Keys: <kbd>H</kbd>it · <kbd>S</kbd>tand · <kbd>D</kbd>ouble · S<kbd>P</kbd>lit · <kbd>⏎</kbd> deal
+      &nbsp;·&nbsp; Rules: 6 decks, dealer stands soft 17, blackjack pays 3:2, no surrender.
     </footer>
   </div>
 
   <script src="strategy.js"></script>
   <script src="game.js"></script>
+  <script src="chart.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
