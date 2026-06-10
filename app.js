@@ -16,19 +16,28 @@ const STATE = {
   anim: { dealerN: 0, dealerHidden: false, handsN: [] },
 };
 
+// localStorage can throw in Safari (private browsing, blocked cookies),
+// so all access goes through these guards; the app then runs in-memory only.
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
 function loadStats() {
   try {
-    const s = JSON.parse(localStorage.getItem('bj-stats') || 'null');
+    const s = JSON.parse(storageGet('bj-stats') || 'null');
     if (s && typeof s.decisions === 'number') return s;
   } catch {}
   return { decisions: 0, correct: 0, hands: 0, net: 0, streak: 0, bestStreak: 0,
            byAction: { H:{c:0,t:0}, S:{c:0,t:0}, D:{c:0,t:0}, P:{c:0,t:0} } };
 }
-function saveStats() { localStorage.setItem('bj-stats', JSON.stringify(STATE.stats)); }
+function saveStats() { storageSet('bj-stats', JSON.stringify(STATE.stats)); }
 function loadWeights() {
-  try { return JSON.parse(localStorage.getItem('bj-weights') || '{}'); } catch { return {}; }
+  try { return JSON.parse(storageGet('bj-weights') || '{}'); } catch { return {}; }
 }
-function saveWeights() { localStorage.setItem('bj-weights', JSON.stringify(STATE.weights)); }
+function saveWeights() { storageSet('bj-weights', JSON.stringify(STATE.weights)); }
 
 // ---------- Card rendering ----------
 

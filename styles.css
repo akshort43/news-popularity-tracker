@@ -156,6 +156,7 @@ header .tag {
   letter-spacing: 3px;
   color: rgba(230,194,90,0.5);
   margin: 14px 0 4px;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -452,6 +453,7 @@ header .tag {
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 18px;
   padding: 18px;
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 
